@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.rotate-x-60 {
+  transform: rotateX(60deg);
+}
+
+.text-shadow-lg {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.track-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 50px,
+    #fff 50px,
+    #fff 60px
+  );
+  background-size: 100% 60px;
+  animation: moveLines 1s linear infinite;
+  opacity: 0.1;
+}
+
+@keyframes moveLines {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 60px;
+  }
+}
+
+.coin-3d {
+  background: radial-gradient(circle at 30% 30%, #ffd700, #b8860b);
+  border-radius: 50%;
+  animation: spin 2s linear infinite;
+}
+
+.obstacle-3d {
+  background: radial-gradient(circle at 30% 30%, #808080, #404040);
+  border-radius: 15%;
+  transform: rotate(45deg);
+}
+
+@keyframes spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
