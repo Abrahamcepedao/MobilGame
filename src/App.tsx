@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Timer, Trophy, Heart } from 'lucide-react';
 
 interface GameObject {
@@ -16,17 +16,43 @@ function App() {
   const [lives, setLives] = useState(3);
   const [gameStarted, setGameStarted] = useState(false);
   const [highScore, setHighScore] = useState(0);
-  const [speed, setSpeed] = useState(5); // Initial speed
+  const [speed, setSpeed] = useState(5);
+  const [dimensions, setDimensions] = useState({
+    width: 400,
+    height: 600,
+    carWidth: 40,
+    carHeight: 80,
+    objectSize: 30
+  });
+  const gameContainerRef = useRef<HTMLDivElement>(null);
 
-  const GAME_WIDTH = 400;
-  const GAME_HEIGHT = 600;
-  const CAR_WIDTH = 40;
-  const CAR_HEIGHT = 80;
-  const OBJECT_SIZE = 30;
   const MOVEMENT_STEP = 10;
-  const MAX_SPEED = 15; // Maximum speed
-  const SPEED_INCREASE_INTERVAL = 10; // Increase speed every 10 seconds
-  const SPEED_INCREASE_AMOUNT = 1; // Speed increase step
+  const MAX_SPEED = 15;
+  const SPEED_INCREASE_INTERVAL = 10;
+  const SPEED_INCREASE_AMOUNT = 1;
+
+  // Update dimensions based on screen size
+  useEffect(() => {
+    const updateDimensions = () => {
+      const isMobile = window.innerWidth < 768;
+      // Calculate maximum width that fits on screen (accounting for padding and margins)
+      const maxWidth = isMobile ? Math.min(window.innerWidth - 48, 320) : 400; // 48px for padding and margins
+      const containerWidth = maxWidth;
+      const containerHeight = isMobile ? window.innerHeight * 0.5 : 600; // Reduced height on mobile
+      
+      setDimensions({
+        width: containerWidth,
+        height: containerHeight,
+        carWidth: containerWidth * 0.1,
+        carHeight: containerWidth * 0.2,
+        objectSize: containerWidth * 0.075
+      });
+    };
+
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
 
   const startGame = () => {
     setGameStarted(true);
@@ -35,8 +61,8 @@ function App() {
     setLives(3);
     setGameObjects([]);
     setIsGameOver(false);
-    setCarPosition(200);
-    setSpeed(5); // Reset speed to initial value
+    setCarPosition(dimensions.width / 2 - dimensions.carWidth / 2);
+    setSpeed(5);
   };
 
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
@@ -45,14 +71,34 @@ function App() {
     if (event.key === 'ArrowLeft') {
       setCarPosition(prev => Math.max(0, prev - MOVEMENT_STEP));
     } else if (event.key === 'ArrowRight') {
-      setCarPosition(prev => Math.min(GAME_WIDTH - CAR_WIDTH, prev + MOVEMENT_STEP));
+      setCarPosition(prev => Math.min(dimensions.width - dimensions.carWidth, prev + MOVEMENT_STEP));
     }
-  }, [gameStarted, isGameOver]);
+  }, [gameStarted, isGameOver, dimensions.width, dimensions.carWidth]);
+
+  // Touch controls
+  const handleTouchMove = useCallback((event: TouchEvent) => {
+    if (!gameStarted || isGameOver || !gameContainerRef.current) return;
+
+    const touch = event.touches[0];
+    const containerRect = gameContainerRef.current.getBoundingClientRect();
+    const touchX = touch.clientX - containerRect.left;
+    
+    setCarPosition(Math.max(0, Math.min(dimensions.width - dimensions.carWidth, touchX - dimensions.carWidth / 2)));
+  }, [gameStarted, isGameOver, dimensions.width, dimensions.carWidth]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [handleKeyPress]);
+    const container = gameContainerRef.current;
+    if (container) {
+      container.addEventListener('touchmove', handleTouchMove);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+      if (container) {
+        container.removeEventListener('touchmove', handleTouchMove);
+      }
+    };
+  }, [handleKeyPress, handleTouchMove]);
 
   // Speed increase effect
   useEffect(() => {
@@ -71,20 +117,20 @@ function App() {
       
       setGameObjects(prevObjects => {
         const newObjects = prevObjects
-          .map(obj => ({ ...obj, y: obj.y + speed })) // Use current speed
-          .filter(obj => obj.y < GAME_HEIGHT);
+          .map(obj => ({ ...obj, y: obj.y + speed }))
+          .filter(obj => obj.y < dimensions.height);
 
         newObjects.forEach(obj => {
           const collision = 
-            carPosition < obj.x + OBJECT_SIZE &&
-            carPosition + CAR_WIDTH > obj.x &&
-            GAME_HEIGHT - CAR_HEIGHT < obj.y + OBJECT_SIZE &&
-            GAME_HEIGHT > obj.y;
+            carPosition < obj.x + dimensions.objectSize &&
+            carPosition + dimensions.carWidth > obj.x &&
+            dimensions.height - dimensions.carHeight < obj.y + dimensions.objectSize &&
+            dimensions.height > obj.y;
 
           if (collision) {
             if (obj.type === 'coin') {
               setScore(prev => prev + 10);
-              obj.y = GAME_HEIGHT + 100;
+              obj.y = dimensions.height + 100;
             } else if (obj.type === 'obstacle') {
               setLives(prev => {
                 if (prev <= 1) {
@@ -94,7 +140,7 @@ function App() {
                 }
                 return prev - 1;
               });
-              obj.y = GAME_HEIGHT + 100;
+              obj.y = dimensions.height + 100;
             }
           }
         });
@@ -102,11 +148,10 @@ function App() {
         return newObjects;
       });
 
-      // Adjust spawn rate based on speed
       if (Math.random() < 0.05 * (speed / 5)) {
         const newObject: GameObject = {
-          x: Math.random() * (GAME_WIDTH - OBJECT_SIZE),
-          y: -OBJECT_SIZE,
+          x: Math.random() * (dimensions.width - dimensions.objectSize),
+          y: -dimensions.objectSize,
           type: Math.random() < 0.7 ? 'obstacle' : 'coin'
         };
         setGameObjects(prev => [...prev, newObject]);
@@ -114,40 +159,41 @@ function App() {
     }, 50);
 
     return () => clearInterval(gameLoop);
-  }, [gameStarted, isGameOver, carPosition, score, speed]);
+  }, [gameStarted, isGameOver, carPosition, score, speed, dimensions]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-xl shadow-2xl p-8 text-white">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-4">
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 flex items-center justify-center p-4 overflow-hidden">
+      <div className="bg-gray-800 rounded-xl shadow-2xl p-4 md:p-8 text-white w-full max-w-md">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <Trophy className="w-6 h-6 text-yellow-500" />
-              <span className="text-lg">{score}</span>
+              <Trophy className="w-5 h-5 md:w-6 md:h-6 text-yellow-500" />
+              <span className="text-base md:text-lg">{score}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Timer className="w-6 h-6 text-blue-500" />
-              <span className="text-lg">{time}s</span>
+              <Timer className="w-5 h-5 md:w-6 md:h-6 text-blue-500" />
+              <span className="text-base md:text-lg">{time}s</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Speed:</span>
-              <span className="text-lg text-green-500">{speed.toFixed(1)}x</span>
+              <span className="text-xs md:text-sm text-gray-400">Speed:</span>
+              <span className="text-base md:text-lg text-green-500">{speed.toFixed(1)}x</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {[...Array(lives)].map((_, i) => (
-              <Heart key={i} className="w-6 h-6 text-red-500" fill="currentColor" />
+              <Heart key={i} className="w-5 h-5 md:w-6 md:h-6 text-red-500" fill="currentColor" />
             ))}
           </div>
         </div>
 
-        <div className="perspective-1000">
+        <div className="perspective-1000" ref={gameContainerRef}>
           <div 
             className="relative bg-gradient-to-b from-gray-700 to-gray-800 rounded-lg overflow-hidden transform-style-3d rotate-x-60"
             style={{ 
-              width: GAME_WIDTH, 
-              height: GAME_HEIGHT,
-              transformOrigin: 'center center'
+              width: dimensions.width, 
+              height: dimensions.height,
+              transformOrigin: 'center center',
+              margin: '0 auto'
             }}
           >
             {/* Track background with 3D effect */}
@@ -170,8 +216,8 @@ function App() {
               className="absolute bottom-0 transition-all duration-100 transform-gpu hover:scale-105"
               style={{
                 left: carPosition,
-                width: CAR_WIDTH,
-                height: CAR_HEIGHT,
+                width: dimensions.carWidth,
+                height: dimensions.carHeight,
                 transform: 'translateZ(20px)',
                 filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))'
               }}
@@ -216,9 +262,9 @@ function App() {
                 style={{
                   left: obj.x,
                   top: obj.y,
-                  width: OBJECT_SIZE,
-                  height: OBJECT_SIZE,
-                  transform: `translateZ(${30 - (obj.y / GAME_HEIGHT) * 30}px)`,
+                  width: dimensions.objectSize,
+                  height: dimensions.objectSize,
+                  transform: `translateZ(${30 - (obj.y / dimensions.height) * 30}px)`,
                   filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3))'
                 }}
               ></div>
@@ -227,17 +273,17 @@ function App() {
             {/* Game over or start screen */}
             {(!gameStarted || isGameOver) && (
               <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center transform-gpu" style={{ transform: 'translateZ(50px)' }}>
-                <div className="text-center">
+                <div className="text-center p-4">
                   {isGameOver && (
                     <>
-                      <h2 className="text-2xl font-bold mb-4 text-shadow-lg">Game Over!</h2>
+                      <h2 className="text-xl md:text-2xl font-bold mb-4 text-shadow-lg">Game Over!</h2>
                       <p className="mb-2">Score: {score}</p>
                       <p className="mb-4">High Score: {highScore}</p>
                     </>
                   )}
                   <button
                     onClick={startGame}
-                    className="bg-red-600 text-white px-8 py-3 rounded-lg hover:bg-red-700 transition-all transform hover:scale-105 hover:shadow-lg"
+                    className="bg-red-600 text-white px-6 md:px-8 py-2 md:py-3 rounded-lg hover:bg-red-700 transition-all transform hover:scale-105 hover:shadow-lg text-sm md:text-base"
                   >
                     {isGameOver ? 'Play Again' : 'Start Game'}
                   </button>
@@ -247,8 +293,8 @@ function App() {
           </div>
         </div>
 
-        <div className="mt-4 text-sm text-gray-400 text-center">
-          Use ← → arrow keys to move the car
+        <div className="mt-4 text-xs md:text-sm text-gray-400 text-center">
+          {window.innerWidth < 768 ? 'Touch and drag to move the car' : 'Use ← → arrow keys to move the car'}
         </div>
       </div>
     </div>
